@@ -46,4 +46,5 @@ usermod -aG docker "$APP_USER"
 systemctl enable --now docker
 
 echo ""
-echo "Done. Log back in as $APP_USER and follow README.md"
+echo "Done. The docker group membership requires a new shell session to take effect."
+echo "Log out and SSH back in, then continue with README.md"

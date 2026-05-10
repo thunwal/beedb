@@ -57,9 +57,30 @@ This will:
 ```bash
 # On the VM, inside the beedb directory:
 cp .env.example .env
-nano .env                  # fill in your passwords
+chmod 600 .env
+nano .env
 docker compose up -d
 ```
+
+The `.env` file holds three PostgreSQL settings that the container reads on first start
+to initialise the database:
+
+| Variable | What it is | Default |
+|---|---|---|
+| `POSTGRES_USER` | The PostgreSQL superuser (equivalent to the built-in `postgres` admin) | `postgres` |
+| `POSTGRES_PASSWORD` | The password for that superuser | *(set this to something strong)* |
+| `POSTGRES_DB` | The name of the database created on first start | `beedb` |
+
+These are **database credentials only** — they have nothing to do with your SSH key or
+the Linux `ubuntu` user on the VM. You use them whenever you connect to PostgreSQL, e.g.
+`psql -h localhost -U postgres -d beedb` will prompt for `POSTGRES_PASSWORD`.
+
+The username (`postgres`) and database name (`beedb`) can be left as-is.
+**Change `POSTGRES_PASSWORD`** to something strong — it is your only defence if the SSH
+tunnel or firewall were ever misconfigured.
+
+These values are set once. If you change them after the container has started, you must
+also update them inside the database manually, or delete the data volume and start fresh.
 
 ---
 
@@ -103,7 +124,7 @@ directly:
 
 ```bash
 # On the VM:
-docker compose exec db psql -U beedb -d beedb -f /docker-entrypoint-initdb.d/01_extensions.sql
+docker compose exec db psql -U postgres -d beedb -f /docker-entrypoint-initdb.d/01_extensions.sql
 ```
 
 Because all statements use `IF NOT EXISTS`, re-running the file is safe.
@@ -124,7 +145,7 @@ ssh -L 5432:localhost:5432 -Nf ubuntu@91.92.140.33 \
 With the tunnel open, connect exactly as if PostgreSQL were running locally:
 
 ```bash
-psql -h localhost -U beedb -d beedb
+psql -h localhost -U postgres -d beedb
 ```
 
 ### Optional: `~/.ssh/config` shortcut
@@ -189,7 +210,7 @@ bash scripts/restore.sh ~/beedb_migration.dump
 If PostGIS extension errors appear after restore, run inside the container:
 
 ```bash
-docker compose exec db psql -U beedb -d beedb \
+docker compose exec db psql -U postgres -d beedb \
   -c "SELECT postgis_extensions_upgrade();"
 ```
 
@@ -207,7 +228,7 @@ git clone https://github.com/thunwal/beedb.git beedb && cd beedb
 sudo bash vm-setup.sh
 
 # 3. Configure and restore
-cp .env.example .env && nano .env
+cp .env.example .env && chmod 600 .env && nano .env
 docker compose up -d
 bash scripts/restore.sh <latest-backup.dump>
 ```

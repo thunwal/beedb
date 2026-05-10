@@ -9,7 +9,7 @@ DUMP="${1:?Usage: $0 <path-to-file.dump>}"
 docker compose cp "$DUMP" db:/tmp/restore.dump
 
 docker compose exec db \
-  pg_restore -U "${POSTGRES_USER:-beedb}" \
+  pg_restore -U "${POSTGRES_USER:-postgres}" \
              -d "${POSTGRES_DB:-beedb}" \
              --clean --if-exists \
              -Fc /tmp/restore.dump

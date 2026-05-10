@@ -5,8 +5,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init:/docker-entrypoint-initdb.d:ro
-    # No ports exposed — connect exclusively via SSH tunnel:
-    #   ssh -L 5432:localhost:5432 -N ubuntu@<vm-ip>
+    ports:
+      - "127.0.0.1:5432:5432"  # loopback only — reachable via SSH tunnel, not from internet
     restart: unless-stopped
 
 volumes:
