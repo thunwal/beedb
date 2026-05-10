@@ -1,0 +1,13 @@
+services:
+  db:
+    image: postgis/postgis:18-3.6-alpine
+    env_file: .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+    # No ports exposed — connect exclusively via SSH tunnel:
+    #   ssh -L 5432:localhost:5432 -N ubuntu@<vm-ip>
+    restart: unless-stopped
+
+volumes:
+  pgdata:
