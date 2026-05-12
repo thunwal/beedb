@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 # Run once as root on a fresh Ubuntu 26.04 LTS VM (Exoscale).
-# Exoscale pre-configures the ubuntu user and installs the SSH key —
-# this script only hardens SSH, sets the firewall, and installs Docker.
+# Installs the authorised SSH key, hardens SSH, sets the firewall, and installs Docker.
 # Usage: sudo bash vm-setup.sh
 set -euo pipefail
 
 APP_USER="ubuntu"
 
+# ── SSH authorised key ─────────────────────────────────────────────────────────
+# Install the project SSH key, replacing whatever Exoscale injected.
+
+SSH_DIR="/home/${APP_USER}/.ssh"
+mkdir -p "$SSH_DIR"
+echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCpeJ+3UiQuA0b9p0OdK/A7mtN8bQ3EdBpBlu3Txi0Nfs+8AFFeZhynjxzcBGlFiE7q+aTGcet/ZwBHKyNzRA0yCreI0KdXynfXB1qb/VHYN2JooygA42VTb6WWyp4wSCRw9gQmDNOm9/GKD41l1BWvPsRL9YHGbKmgNkyHRraspjul58Lq2y8PU1PZgC+9LXYV9TgT/8xnJ3/O7suCx3ZI2bAUn/5dYNgOIJbgxupUBiAXSvFkLeXLcxeJ/C86K+hfyJHeCaeiOkduVvDIn/BRPHk0uJoZ716rWtWXHIdLn7G/5QmaCtQC/8jQR+WwGJ0c5sr+HdP8cKX5sYzvRh8T rsa-key-20220511" \
+  > "${SSH_DIR}/authorized_keys"
+chmod 700 "$SSH_DIR"
+chmod 600 "${SSH_DIR}/authorized_keys"
+chown -R "${APP_USER}:${APP_USER}" "$SSH_DIR"
+
 # ── SSH hardening ─────────────────────────────────────────────────────────────
-# Exoscale already sets up key-based auth; enforce the settings explicitly.
 
 SSHD_CONF=/etc/ssh/sshd_config
 cp "$SSHD_CONF" "${SSHD_CONF}.bak"

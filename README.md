@@ -6,8 +6,8 @@ PostgreSQL 18 + PostGIS 3.6 database server, Dockerized and managed as code.
 
 ## SSH keys explained
 
-There is exactly **one SSH key** involved: `mybeecert_openssh.ppk`, installed on the VM
-automatically by Exoscale. It serves both purposes:
+There is exactly **one SSH key** involved: `beekey_openssh2` (a self-generated RSA key),
+written to the ubuntu user's `authorized_keys` by `vm-setup.sh`. It serves both purposes:
 
 | Purpose | How |
 |---|---|
@@ -34,7 +34,7 @@ All setup runs directly from the cloned repository — no file copying needed.
 ### 1. Clone the repo on the VM
 
 ```bash
-ssh ubuntu@91.92.140.33 -i /home/christa/kDrive/Dokumente/informatik/mybeecert_openssh.ppk
+ssh ubuntu@91.92.140.33 -i /home/christa/kDrive/Dokumente/informatik/beekey_openssh2
 git clone https://github.com/thunwal/beedb.git beedb
 ```
 
@@ -91,7 +91,7 @@ After pushing changes from your local machine, they need to be pulled and applie
 ### Manually (SSH in and update)
 
 ```bash
-ssh ubuntu@91.92.140.33 -i /home/christa/kDrive/Dokumente/informatik/mybeecert_openssh.ppk
+ssh ubuntu@91.92.140.33 -i /home/christa/kDrive/Dokumente/informatik/beekey_openssh2
 cd ~/beedb
 git pull
 docker compose up -d
@@ -137,7 +137,7 @@ Because all statements use `IF NOT EXISTS`, re-running the file is safe.
 
 ```bash
 ssh -L 5432:localhost:5432 -Nf ubuntu@91.92.140.33 \
-    -i /home/christa/kDrive/Dokumente/informatik/mybeecert_openssh.ppk
+    -i /home/christa/kDrive/Dokumente/informatik/beekey_openssh2
 ```
 
 ### Connect to the database
@@ -156,12 +156,12 @@ Add this block on your local machine to avoid typing the full command every time
 Host beedb
     HostName      91.92.140.33
     User          ubuntu
-    IdentityFile  /home/christa/kDrive/Dokumente/informatik/mybeecert_openssh.ppk
+    IdentityFile  /home/christa/kDrive/Dokumente/informatik/beekey_openssh2
 
 Host beedb-tunnel
     HostName      91.92.140.33
     User          ubuntu
-    IdentityFile  /home/christa/kDrive/Dokumente/informatik/mybeecert_openssh.ppk
+    IdentityFile  /home/christa/kDrive/Dokumente/informatik/beekey_openssh2
     LocalForward  5432 localhost:5432
 ```
 
@@ -196,7 +196,7 @@ pg_dump -U postgres -Fc <dbname> > beedb_migration.dump
 **Copy to your local machine or directly to the new VM:**
 
 ```bash
-KEY=/home/christa/kDrive/Dokumente/informatik/mybeecert_openssh.ppk
+KEY=/home/christa/kDrive/Dokumente/informatik/beekey_openssh2
 scp -i "$KEY" ubuntu@<old-vm-ip>:~/beedb_migration.dump .
 scp -i "$KEY" beedb_migration.dump ubuntu@91.92.140.33:~/
 ```
@@ -219,10 +219,10 @@ docker compose exec db psql -U postgres -d beedb \
 ## Rebuilding from scratch
 
 ```bash
-# 1. Provision a new VM on Exoscale (SSH key is injected automatically)
+# 1. Provision a new VM on Exoscale (use console or Exoscale's key for initial access)
 
 # 2. Clone the repo and run setup
-KEY=/home/christa/kDrive/Dokumente/informatik/mybeecert_openssh.ppk
+KEY=/home/christa/kDrive/Dokumente/informatik/beekey_openssh2
 ssh -i "$KEY" ubuntu@<new-vm-ip>
 git clone https://github.com/thunwal/beedb.git beedb && cd beedb
 sudo bash vm-setup.sh
