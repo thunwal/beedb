@@ -3,7 +3,7 @@ services:
     image: postgis/postgis:18-3.6-alpine
     env_file: .env
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
       - ./init:/docker-entrypoint-initdb.d:ro
     ports:
       - "127.0.0.1:5432:5432"  # loopback only — reachable via SSH tunnel, not from internet
