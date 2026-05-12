@@ -18,12 +18,18 @@ chmod 600 "${SSH_DIR}/authorized_keys"
 chown -R "${APP_USER}:${APP_USER}" "$SSH_DIR"
 
 # ── SSH hardening ─────────────────────────────────────────────────────────────
+# Disable the Include directive so cloud-init drop-ins cannot re-enable password
+# auth (OpenSSH first-match wins, so 50-cloud-init.conf would beat any 99- file).
+# Set all auth settings directly in the main config, matching the old server.
 
 SSHD_CONF=/etc/ssh/sshd_config
 cp "$SSHD_CONF" "${SSHD_CONF}.bak"
+sed -i 's|^Include /etc/ssh/sshd_config.d/|#Include /etc/ssh/sshd_config.d/|' "$SSHD_CONF"
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/'               "$SSHD_CONF"
 sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' "$SSHD_CONF"
 sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/'    "$SSHD_CONF"
+sed -i 's/^#\?UsePAM.*/UsePAM no/'                                 "$SSHD_CONF"
+sed -i 's/^#\?KbdInteractiveAuthentication.*/KbdInteractiveAuthentication no/' "$SSHD_CONF"
 systemctl reload ssh
 
 # ── Firewall ──────────────────────────────────────────────────────────────────
