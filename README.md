@@ -34,7 +34,7 @@ All setup runs directly from the cloned repository — no file copying needed.
 ### 1. Clone the repo on the VM
 
 ```bash
-ssh ubuntu@91.92.140.33 -i /home/christa/kDrive/Dokumente/informatik/beekey_openssh2
+ssh ubuntu@<VM_IP> -i <PATH_TO>/beekey_openssh2
 git clone https://github.com/thunwal/beedb.git beedb
 ```
 
@@ -54,8 +54,8 @@ This will:
 
 ## Starting the database
 
+On the VM, inside the beedb directory:
 ```bash
-# On the VM, inside the beedb directory:
 cp .env.example .env
 chmod 600 .env
 nano .env
@@ -69,7 +69,7 @@ to initialise the database:
 |---|---|---|
 | `POSTGRES_USER` | The PostgreSQL superuser (equivalent to the built-in `postgres` admin) | `postgres` |
 | `POSTGRES_PASSWORD` | The password for that superuser | *(set this to something strong)* |
-| `POSTGRES_DB` | The name of the database created on first start | `beedb` |
+| `POSTGRES_DB` | The name of the database created on first start | `postgres` |
 
 These are **database credentials only** — they have nothing to do with your SSH key or
 the Linux `ubuntu` user on the VM. You use them whenever you connect to PostgreSQL, e.g.
@@ -91,20 +91,14 @@ After pushing changes from your local machine, they need to be pulled and applie
 ### Manually (SSH in and update)
 
 ```bash
-ssh ubuntu@91.92.140.33 -i /home/christa/kDrive/Dokumente/informatik/beekey_openssh2
-cd ~/beedb
+ssh ubuntu@<VM_IP> -i <PATH_TO>/beekey_openssh2
+cd beedb
 git pull
 docker compose up -d
 ```
 
 `docker compose up -d` is safe to run at any time — it only recreates the container if
 its configuration actually changed. The database volume is never touched.
-
-### One command from your local machine
-
-```bash
-bash scripts/deploy.sh 91.92.140.33
-```
 
 ### What each type of change requires
 
@@ -136,8 +130,8 @@ Because all statements use `IF NOT EXISTS`, re-running the file is safe.
 ### Open the tunnel
 
 ```bash
-ssh -L 5432:localhost:5432 -Nf ubuntu@91.92.140.33 \
-    -i /home/christa/kDrive/Dokumente/informatik/beekey_openssh2
+ssh -L 5432:localhost:5432 -Nf ubuntu@<VM_IP> \
+    -i <PATH_TO>/beekey_openssh2
 ```
 
 ### Connect to the database
@@ -154,14 +148,14 @@ Add this block on your local machine to avoid typing the full command every time
 
 ```sshconfig
 Host beedb
-    HostName      91.92.140.33
+    HostName      <VM_IP>
     User          ubuntu
-    IdentityFile  /home/christa/kDrive/Dokumente/informatik/beekey_openssh2
+    IdentityFile  <PATH_TO>/beekey_openssh2
 
 Host beedb-tunnel
-    HostName      91.92.140.33
+    HostName      <VM_IP>
     User          ubuntu
-    IdentityFile  /home/christa/kDrive/Dokumente/informatik/beekey_openssh2
+    IdentityFile  <PATH_TO>/beekey_openssh2
     LocalForward  5432 localhost:5432
 ```
 
@@ -196,9 +190,9 @@ pg_dump -U postgres -Fc <dbname> > beedb_migration.dump
 **Copy to your local machine or directly to the new VM:**
 
 ```bash
-KEY=/home/christa/kDrive/Dokumente/informatik/beekey_openssh2
+KEY=<PATH_TO>/beekey_openssh2
 scp -i "$KEY" ubuntu@<old-vm-ip>:~/beedb_migration.dump .
-scp -i "$KEY" beedb_migration.dump ubuntu@91.92.140.33:~/
+scp -i "$KEY" beedb_migration.dump ubuntu@<VM_IP>:~/
 ```
 
 **On the new VM, after `docker compose up -d`:**
@@ -222,7 +216,7 @@ docker compose exec db psql -U postgres -d beedb \
 # 1. Provision a new VM on Exoscale (use console or Exoscale's key for initial access)
 
 # 2. Clone the repo and run setup
-KEY=/home/christa/kDrive/Dokumente/informatik/beekey_openssh2
+KEY=<PATH_TO>/beekey_openssh2
 ssh -i "$KEY" ubuntu@<new-vm-ip>
 git clone https://github.com/thunwal/beedb.git beedb && cd beedb
 sudo bash vm-setup.sh

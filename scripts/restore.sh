@@ -6,13 +6,10 @@ set -euo pipefail
 DUMP="${1:?Usage: $0 <path-to-file.dump>}"
 [[ -f "$DUMP" ]] || { echo "File not found: $DUMP"; exit 1; }
 
-docker compose cp "$DUMP" db:/tmp/restore.dump
-
-docker compose exec db \
+docker compose exec -T db \
   pg_restore -U "${POSTGRES_USER:-postgres}" \
              -d "${POSTGRES_DB:-beedb}" \
              --clean --if-exists \
-             -Fc /tmp/restore.dump
-
-docker compose exec db rm /tmp/restore.dump
+             -Fc \
+  < "$DUMP"
 echo "Restore complete."
