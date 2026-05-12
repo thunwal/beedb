@@ -40,6 +40,26 @@ ufw default allow outgoing
 ufw allow ssh          # port 22 only — 5432 is never exposed
 ufw --force enable
 
+# ── Timezone ─────────────────────────────────────────────────────────────────
+
+timedatectl set-timezone Europe/Zurich
+
+# ── Automatic security updates ────────────────────────────────────────────────
+
+apt-get update -qq
+apt-get install -y -qq unattended-upgrades
+
+cat > /etc/apt/apt.conf.d/20auto-upgrades << 'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+EOF
+
+cat > /etc/apt/apt.conf.d/99local-reboot << 'EOF'
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
+Unattended-Upgrade::Automatic-Reboot-Time "03:00";
+EOF
+
 # ── Docker ───────────────────────────────────────────────────────────────────
 
 apt-get update -qq
