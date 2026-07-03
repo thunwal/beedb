@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run once as root on a fresh Ubuntu 26.04 LTS VM (Exoscale).
+# Run once as root on a fresh Ubuntu 26.04 LTS VM.
 # Installs the authorised SSH key, hardens SSH, sets the firewall, and installs Docker.
 # Usage: sudo bash vm-setup.sh
 set -euo pipefail
@@ -7,7 +7,7 @@ set -euo pipefail
 APP_USER="ubuntu"
 
 # ── SSH authorised key ─────────────────────────────────────────────────────────
-# Install the project SSH key, replacing whatever Exoscale injected.
+# Install the project SSH key, replacing whatever the cloud provider injected.
 
 SSH_DIR="/home/${APP_USER}/.ssh"
 mkdir -p "$SSH_DIR"
@@ -20,7 +20,7 @@ chown -R "${APP_USER}:${APP_USER}" "$SSH_DIR"
 # ── SSH hardening ─────────────────────────────────────────────────────────────
 # Disable the Include directive so cloud-init drop-ins cannot re-enable password
 # auth (OpenSSH first-match wins, so 50-cloud-init.conf would beat any 99- file).
-# Set all auth settings directly in the main config, matching the old server.
+# Set all auth settings directly in the main config.
 
 SSHD_CONF=/etc/ssh/sshd_config
 cp "$SSHD_CONF" "${SSHD_CONF}.bak"
@@ -63,7 +63,7 @@ EOF
 # ── Docker ───────────────────────────────────────────────────────────────────
 
 apt-get update -qq
-apt-get install -y -qq ca-certificates curl git
+apt-get install -y -qq ca-certificates curl git jq ssmtp
 
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
@@ -83,3 +83,6 @@ systemctl enable --now docker
 echo ""
 echo "Done. The docker group membership requires a new shell session to take effect."
 echo "Log out and SSH back in, then continue with README.md"
+echo ""
+echo "Note: mail notifications for scripts/backup.sh require /etc/ssmtp/ssmtp.conf"
+echo "to be configured with your SMTP relay. See README.md."
