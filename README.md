@@ -125,6 +125,7 @@ This will:
 - Disable password authentication and root SSH login
 - Configure `ufw` to allow port 22 only — port 5432 is never exposed
 - Install Docker and Docker Compose
+- Install a daily cron entry that runs `scripts/backup.sh` at 01:30
 
 ---
 
@@ -288,11 +289,7 @@ FromLineOverride=YES
 
 ### Schedule the daily run
 
-On the VM, add a cron entry for the `ubuntu` user:
-
-```bash
-crontab -e
-```
+`vm-setup.sh` already installed this cron entry for the `ubuntu` user:
 
 ```cron
 30 1 * * * cd /home/ubuntu/beedb && bash scripts/backup.sh >> /home/ubuntu/beedb-backup.log 2>&1
@@ -301,6 +298,9 @@ crontab -e
 That runs the backup at 01:30 every day and appends stdout/stderr to
 `~/beedb-backup.log`. The mail (if configured) carries a one-line status
 subject; the log has the full detail.
+
+Verify with `crontab -l` on the VM. To change the time or destination, edit
+with `crontab -e`.
 
 ---
 

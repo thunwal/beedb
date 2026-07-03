@@ -63,7 +63,7 @@ EOF
 # ── Docker ───────────────────────────────────────────────────────────────────
 
 apt-get update -qq
-apt-get install -y -qq ca-certificates curl git jq ssmtp
+apt-get install -y -qq ca-certificates curl git jq ssmtp cron
 
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
@@ -79,6 +79,16 @@ apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plug
 usermod -aG docker "$APP_USER"
 
 systemctl enable --now docker
+
+# ── Daily backup cron job ────────────────────────────────────────────────────
+# Install the daily backup schedule for the app user. Idempotent: any prior
+# entry referencing scripts/backup.sh is dropped before the new one is added.
+
+systemctl enable --now cron
+
+CRON_LINE="30 1 * * * cd /home/${APP_USER}/beedb && bash scripts/backup.sh >> /home/${APP_USER}/beedb-backup.log 2>&1"
+( crontab -u "$APP_USER" -l 2>/dev/null | grep -v -F 'scripts/backup.sh' ; echo "$CRON_LINE" ) \
+    | crontab -u "$APP_USER" -
 
 echo ""
 echo "Done. The docker group membership requires a new shell session to take effect."
