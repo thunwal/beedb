@@ -10,8 +10,8 @@ Includes specific tooling required to manage the server for [BeeRadar.info](http
 
 Bringing up beedb on a fresh Docker host is a three-phase workflow:
 
-1. **Prepare the host** — run `host-setup.sh`. See [Setup the Docker host](#setup-the-docker-host).
-2. **Start the database container** — configure `.env`, run `docker compose up -d`. See [Initialize the database container](#initialize-the-database-container).
+1. **Prepare the Docker host** — run `host-setup.sh`. See [Setup the Docker host](#setup-the-docker-host).
+2. **Initialize the database container** — configure `.env`, run `docker compose up -d`. See [Initialize the database container](#initialize-the-database-container).
 3. **Populate the database** — restore from a Dropbox backup (see [Backup and restore databases](#backup-and-restore-databases)) or migrate from an old server (see [Migrating the databases to a new server](#migrating-the-databases-to-a-new-server)). Skip if starting with an empty database.
 
 The remaining chapters cover day-to-day operations: remote access, deploying
