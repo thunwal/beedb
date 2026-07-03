@@ -306,7 +306,7 @@ subject; the log has the full detail.
 
 ## Migrating the databases to a new server
 
-`scripts/import_databases.sh` pulls each database directly from the old
+`scripts/restore_from_db_server` pulls each database directly from the old
 VM into the new Docker postgres over SSH. Run it on the **new** server. The
 database list is hardcoded in the script (currently `beecovie` and
 `msculpturalis`); edit it there if that changes.
@@ -358,7 +358,7 @@ ready to run the migration.
 ### Run the migration
 
 ```bash
-bash scripts/import_databases.sh
+bash scripts/restore_from_db_server
 ```
 
 It prompts for the old server's IP, then drops and recreates each target

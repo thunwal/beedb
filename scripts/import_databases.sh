@@ -6,8 +6,8 @@
 # README.md ("Migrating data from the old server").
 #
 # Usage:
-#   bash scripts/import_databases.sh
-#   OLD_SSH_USER=myuser bash scripts/import_databases.sh
+#   bash scripts/restore_from_db_server
+#   OLD_SSH_USER=myuser bash scripts/restore_from_db_server
 set -euo pipefail
 
 SSH_KEY="$HOME/.ssh/beedb_migration"
