@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Download a dump from Dropbox and restore it into the local Docker postgres.
-# By default fetches the most recent beedb_*.dump in $DROPBOX_FOLDER.
 #
 # Usage:
-#   bash scripts/restore_from_dropbox.sh                       # latest
-#   bash scripts/restore_from_dropbox.sh beedb_20260703T013000.dump
+#   bash scripts/restore_from_dropbox.sh <dbname>                        # latest for that DB
+#   bash scripts/restore_from_dropbox.sh <dbname>_20260703T013000.dump   # specific file
+#
+# The target database is derived from the dump filename by restore.sh.
 
 set -eo pipefail
 
@@ -38,7 +39,17 @@ done < .env
 : "${DROPBOX_REFRESH_TOKEN:?DROPBOX_REFRESH_TOKEN missing in .env}"
 : "${DROPBOX_FOLDER:=/beedb-backups}"
 
-FILE="${1:-}"
+ARG="${1:?Usage: $0 <dbname> | <dbname>_YYYYMMDDTHHMMSS.dump}"
+
+# If the argument ends in .dump, treat it as an explicit filename; otherwise
+# treat it as a database name and pick the newest matching file.
+FILE=""
+TARGET_DB=""
+if [[ "$ARG" == *.dump ]]; then
+    FILE="$ARG"
+else
+    TARGET_DB="$ARG"
+fi
 
 BACKUP_DIR="$(pwd)/backups"
 mkdir -p "$BACKUP_DIR"
@@ -55,7 +66,7 @@ if [[ -z "$TOKEN" ]]; then
 fi
 
 if [[ -z "$FILE" ]]; then
-    echo "==> Finding latest backup in ${DROPBOX_FOLDER}"
+    echo "==> Finding latest ${TARGET_DB} backup in ${DROPBOX_FOLDER}"
     list_resp=$(curl -s -X POST https://api.dropboxapi.com/2/files/list_folder \
         -H "Authorization: Bearer $TOKEN" \
         -H "Content-Type: application/json" \
@@ -67,11 +78,11 @@ if [[ -z "$FILE" ]]; then
     fi
 
     FILE=$(jq -r '.entries[] | select(.[".tag"]=="file") | .name' <<< "$list_resp" \
-        | grep -E '^beedb_[0-9]{8}T[0-9]{6}\.dump$' \
+        | grep -E "^${TARGET_DB}_[0-9]{8}T[0-9]{6}\.dump$" \
         | sort | tail -1)
 
     if [[ -z "$FILE" ]]; then
-        echo "ERROR: no beedb_*.dump files found in ${DROPBOX_FOLDER}" >&2
+        echo "ERROR: no ${TARGET_DB}_*.dump files found in ${DROPBOX_FOLDER}" >&2
         exit 1
     fi
 fi

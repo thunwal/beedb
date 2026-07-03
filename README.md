@@ -210,33 +210,42 @@ Because all statements use `IF NOT EXISTS`, re-running the file is safe.
 
 ## Backup and restore databases
 
-`scripts/backup.sh` dumps the database, uploads the dump to Dropbox, applies a
-retention policy on Dropbox, keeps only the most recent dump locally, and mails
-the outcome via `ssmtp`. It is designed to run daily from cron.
+`scripts/backup.sh` auto-discovers every user database on the server, dumps
+each one, uploads the dumps to Dropbox, applies a retention policy on Dropbox,
+keeps only the most recent dumps locally, and mails the outcome via `ssmtp`.
+It is designed to run daily from cron.
+
+Each dump is named `<dbname>_YYYYMMDDTHHMMSS.dump` — one file per database per
+run. Adding or removing a database (e.g. via the migration script) is picked
+up automatically on the next run; no config change needed.
 
 ### One-off usage
 
 ```bash
-# Create a timestamped dump in ./backups/, upload it, and rotate old files
+# Dump every user database, upload each, and rotate old files
 bash scripts/backup.sh
 
-# Restore from a local dump file
-bash scripts/restore.sh backups/beedb_20260510T120000.dump
+# Restore a single database from a local dump file. The target database name
+# is taken from the filename, so <dbname>_YYYYMMDDTHHMMSS.dump is required.
+bash scripts/restore.sh backups/beecovie_20260510T120000.dump
 ```
 
 ### Restore from a Dropbox backup
 
 For disaster recovery (fresh VM, corrupted data, or rolling back to an earlier
-snapshot), `scripts/restore_from_dropbox.sh` fetches a dump from Dropbox and
-pipes it into `pg_restore`:
+snapshot), `scripts/restore_from_dropbox.sh` fetches one dump from Dropbox and
+restores it:
 
 ```bash
-# Restore the most recent backup
-bash scripts/restore_from_dropbox.sh
+# Restore the latest backup for a specific database
+bash scripts/restore_from_dropbox.sh beecovie
 
 # Or restore a specific file
-bash scripts/restore_from_dropbox.sh beedb_20260703T013000.dump
+bash scripts/restore_from_dropbox.sh beecovie_20260703T013000.dump
 ```
+
+The script restores one database per invocation. To restore several after a
+disaster, run it once per database.
 
 Prerequisites: the container is running (`docker compose up -d`), and `.env`
 holds the same Dropbox credentials the backup script uses.
@@ -247,12 +256,15 @@ If you'd rather grab the file by hand, download it via the Dropbox web UI,
 
 ### Retention on Dropbox
 
+Applied per file, based on the timestamp in the filename (shared across all
+databases):
+
 - Every backup for the last 14 days (daily)
 - The Monday backup for the last 60 days (weekly, ~2 months)
 - The first-Monday-of-month backup for the last 365 days (monthly, ~1 year)
 
-Anything else in `DROPBOX_FOLDER` that matches `beedb_YYYYMMDDTHHMMSS.dump` is
-deleted after each run. Files that do not match the naming pattern are left
+Anything else in `DROPBOX_FOLDER` that matches `<dbname>_YYYYMMDDTHHMMSS.dump`
+is deleted after each run. Files that do not match the naming pattern are left
 alone.
 
 ### Configure `.env`

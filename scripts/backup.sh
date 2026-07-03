@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Dump beedb, upload to Dropbox, apply retention, mail the result.
-# Meant to run daily from cron on the VM.
+# Dump every user database, upload each to Dropbox, apply retention, mail the
+# result. Meant to run daily from cron on the VM.
 #
-# Retention on Dropbox:
+# Databases are auto-discovered from the running Docker postgres (all where
+# datallowconn AND NOT datistemplate). Each dump is named
+# `<dbname>_YYYYMMDDTHHMMSS.dump`.
+#
+# Retention on Dropbox (per file, based on the timestamp):
 #   - every backup for the last 14 days (daily)
 #   - the Monday backup for the last 60 days (weekly)
 #   - the first-Monday-of-month backup for the last 365 days (monthly)
-# Local: only the most recent dump is kept in ./backups/.
+# Local: only the most recent dump of each database is kept in ./backups/.
 
 set -eo pipefail
 
@@ -37,7 +41,6 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done < .env
 
 : "${POSTGRES_USER:=postgres}"
-: "${POSTGRES_DB:=beedb}"
 : "${DROPBOX_APP_KEY:?DROPBOX_APP_KEY missing in .env}"
 : "${DROPBOX_APP_SECRET:?DROPBOX_APP_SECRET missing in .env}"
 : "${DROPBOX_REFRESH_TOKEN:?DROPBOX_REFRESH_TOKEN missing in .env}"
@@ -49,8 +52,6 @@ BACKUP_DIR="$(pwd)/backups"
 mkdir -p "$BACKUP_DIR"
 
 TIMESTAMP=$(date +%Y%m%dT%H%M%S)
-NAME="beedb_${TIMESTAMP}.dump"
-OUTFILE="${BACKUP_DIR}/${NAME}"
 
 STATUS="FAILED"
 SUMMARY="script exited before finishing"
@@ -81,20 +82,37 @@ on_exit() {
 }
 trap on_exit EXIT
 
-# ── 1. dump ───────────────────────────────────────────────────────────────────
-log "Dumping ${POSTGRES_DB} to ${OUTFILE}"
-docker compose exec -T db \
-    pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB" > "$OUTFILE"
+# ── 1. discover databases ────────────────────────────────────────────────────
+log "Discovering user databases"
+mapfile -t DATABASES < <(docker compose exec -T db \
+    psql -U "$POSTGRES_USER" -d postgres -tAc \
+    "SELECT datname FROM pg_database WHERE datallowconn AND NOT datistemplate ORDER BY datname")
 
-if [[ ! -s "$OUTFILE" ]]; then
-    SUMMARY="pg_dump produced an empty file"
+if (( ${#DATABASES[@]} == 0 )); then
+    SUMMARY="no user databases found"
     exit 1
 fi
-DUMP_BYTES=$(stat -c%s "$OUTFILE")
-DUMP_KB=$(( (DUMP_BYTES + 1023) / 1024 ))
-log "Dump size: ${DUMP_KB} KB"
+log "Databases: ${DATABASES[*]}"
 
-# ── 2. Dropbox access token ───────────────────────────────────────────────────
+# ── 2. dump each database ────────────────────────────────────────────────────
+declare -A DUMP_KB
+declare -a DUMP_NAMES
+for DB in "${DATABASES[@]}"; do
+    NAME="${DB}_${TIMESTAMP}.dump"
+    OUTFILE="${BACKUP_DIR}/${NAME}"
+    log "Dumping ${DB} to ${OUTFILE}"
+    docker compose exec -T db pg_dump -U "$POSTGRES_USER" -Fc "$DB" > "$OUTFILE"
+    if [[ ! -s "$OUTFILE" ]]; then
+        SUMMARY="pg_dump produced an empty file for ${DB}"
+        exit 1
+    fi
+    bytes=$(stat -c%s "$OUTFILE")
+    DUMP_KB[$DB]=$(( (bytes + 1023) / 1024 ))
+    DUMP_NAMES+=("$NAME")
+    log "  ${DB}: ${DUMP_KB[$DB]} KB"
+done
+
+# ── 3. Dropbox access token ──────────────────────────────────────────────────
 log "Requesting Dropbox access token"
 token_resp=$(curl -s https://api.dropbox.com/oauth2/token \
     -d grant_type=refresh_token \
@@ -106,30 +124,42 @@ if [[ -z "$TOKEN" ]]; then
     exit 1
 fi
 
-# ── 3. upload ─────────────────────────────────────────────────────────────────
-# Single-request upload; Dropbox limit is 150 MB. If the dump ever grows past
-# that, switch to /2/files/upload_session/*.
-log "Uploading ${NAME} to ${DROPBOX_FOLDER}"
-upload_resp=$(curl -s --max-time 3600 -X POST \
-    https://content.dropboxapi.com/2/files/upload \
-    --header "Authorization: Bearer ${TOKEN}" \
-    --header "Dropbox-API-Arg: {\"path\": \"${DROPBOX_FOLDER}/${NAME}\",\"mode\": \"overwrite\",\"mute\": true}" \
-    --header "Content-Type: application/octet-stream" \
-    --data-binary "@${OUTFILE}" || true)
+# ── 4. upload each dump ──────────────────────────────────────────────────────
+# Single-request upload; Dropbox limit is 150 MB per file. If any dump ever
+# grows past that, switch to /2/files/upload_session/*.
+TOTAL_UP_KB=0
+for NAME in "${DUMP_NAMES[@]}"; do
+    log "Uploading ${NAME} to ${DROPBOX_FOLDER}"
+    upload_resp=$(curl -s --max-time 3600 -X POST \
+        https://content.dropboxapi.com/2/files/upload \
+        --header "Authorization: Bearer ${TOKEN}" \
+        --header "Dropbox-API-Arg: {\"path\": \"${DROPBOX_FOLDER}/${NAME}\",\"mode\": \"overwrite\",\"mute\": true}" \
+        --header "Content-Type: application/octet-stream" \
+        --data-binary "@${BACKUP_DIR}/${NAME}" || true)
+    uploaded_size=$(jq -r '.size // empty' <<< "$upload_resp" 2>/dev/null || true)
+    if [[ -z "$uploaded_size" ]]; then
+        SUMMARY="Dropbox upload failed for ${NAME}: ${upload_resp:0:200}"
+        exit 1
+    fi
+    up_kb=$(( (uploaded_size + 1023) / 1024 ))
+    TOTAL_UP_KB=$(( TOTAL_UP_KB + up_kb ))
+    log "  Uploaded ${up_kb} KB"
+done
 
-uploaded_size=$(jq -r '.size // empty' <<< "$upload_resp" 2>/dev/null || true)
-if [[ -z "$uploaded_size" ]]; then
-    SUMMARY="Dropbox upload failed: ${upload_resp:0:200}"
-    exit 1
-fi
-UPLOAD_KB=$(( (uploaded_size + 1023) / 1024 ))
-log "Uploaded ${UPLOAD_KB} KB"
+# ── 5. keep only this run's local dumps ──────────────────────────────────────
+# Delete any *.dump matching the <name>_YYYYMMDDTHHMMSS.dump pattern that
+# wasn't produced by this run.
+keep_expr=""
+for NAME in "${DUMP_NAMES[@]}"; do
+    keep_expr+="|${NAME}"
+done
+keep_expr="${keep_expr#|}"
+find "$BACKUP_DIR" -maxdepth 1 -type f -regextype posix-extended \
+    -regex ".*/[A-Za-z_][A-Za-z0-9_-]*_[0-9]{8}T[0-9]{6}\.dump$" \
+    ! -regex ".*/(${keep_expr})$" -delete
+log "Local: kept ${#DUMP_NAMES[@]} current dump(s)"
 
-# ── 4. keep only the most recent local dump ──────────────────────────────────
-find "$BACKUP_DIR" -maxdepth 1 -type f -name 'beedb_*.dump' ! -name "$NAME" -delete
-log "Kept only ${NAME} locally"
-
-# ── 5. apply retention on Dropbox ────────────────────────────────────────────
+# ── 6. apply retention on Dropbox ────────────────────────────────────────────
 RET_KEPT=0; RET_DEL=0; RET_SKIP=0
 
 apply_retention() {
@@ -171,7 +201,9 @@ apply_retention() {
         name=${entry%%$'\t'*}
         path=${entry#*$'\t'}
 
-        if [[ ! "$name" =~ ^beedb_([0-9]{8})T[0-9]{6}\.dump$ ]]; then
+        # Match <dbname>_YYYYMMDDTHHMMSS.dump for any dbname; retention uses
+        # the timestamp only, so all databases share the same schedule.
+        if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_-]*_([0-9]{8})T[0-9]{6}\.dump$ ]]; then
             log "Skipping unrecognised file: $name"
             RET_SKIP=$((RET_SKIP + 1))
             continue
@@ -222,5 +254,9 @@ else
 fi
 
 STATUS="OK"
-SUMMARY="${UPLOAD_KB} KB uploaded; retention kept ${RET_KEPT}, deleted ${RET_DEL}"
+per_db=""
+for DB in "${DATABASES[@]}"; do
+    per_db+="${DB}=${DUMP_KB[$DB]}KB "
+done
+SUMMARY="${#DATABASES[@]} DBs (${TOTAL_UP_KB} KB): ${per_db% }; retention kept ${RET_KEPT}, deleted ${RET_DEL}"
 log "Done: ${SUMMARY}"
