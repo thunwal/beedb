@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pull databases from the old VM directly into the new Docker postgres.
+# Pull databases from the old server directly into the new Docker postgres.
 # Run this on the NEW server.
 #
 # Prerequisite: run the preparatory key-install and sudoers steps documented in
@@ -70,7 +70,7 @@ for DB in "${DATABASES[@]}"; do
         -c "CREATE DATABASE \"${DB}\";"
 
     echo "--> Streaming dump from old server and restoring into Docker postgres..."
-    # sudo -u postgres lets pg_dump connect via the local unix socket on the old VM
+    # sudo -u postgres lets pg_dump connect via the local unix socket on the old server
     ssh -i "$SSH_KEY" "${OLD_SSH_USER}@${OLD_HOST}" \
         "sudo -u postgres pg_dump -Fc \"${DB}\"" \
       | docker compose exec -T db \

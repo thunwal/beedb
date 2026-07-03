@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Dump every user database, upload each to Dropbox, apply retention, mail the
-# result. Meant to run daily from cron on the VM.
+# result. Meant to run daily from cron on the Docker host.
 #
 # Databases are auto-discovered from the running Docker postgres (all where
 # datallowconn AND NOT datistemplate). Each dump is named

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Run once as root on a fresh Ubuntu 26.04 LTS VM.
+# Run once as root on a fresh Ubuntu 26.04 LTS host.
 # Installs the authorised SSH key, hardens SSH, sets the firewall, and installs Docker.
-# Usage: sudo bash vm-setup.sh
+# Usage: sudo bash host-setup.sh
 set -euo pipefail
 
 APP_USER="ubuntu"
