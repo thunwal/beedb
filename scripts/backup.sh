@@ -19,10 +19,22 @@ if [[ ! -f .env ]]; then
     echo "ERROR: .env not found in $(pwd)" >&2
     exit 1
 fi
-set -a
-# shellcheck disable=SC1091
-source .env
-set +a
+
+# Parse .env with docker-compose semantics rather than `source`: values are
+# literal strings, so passwords with (, ), $, spaces, etc. don't need shell
+# escaping in the same file docker-compose reads.
+while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" != *=* ]] && continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    if [[ "$val" == \"*\" ]]; then
+        val="${val:1:${#val}-2}"
+    elif [[ "$val" == \'*\' ]]; then
+        val="${val:1:${#val}-2}"
+    fi
+    export "$key=$val"
+done < .env
 
 : "${POSTGRES_USER:=postgres}"
 : "${POSTGRES_DB:=beedb}"
