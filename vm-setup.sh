@@ -87,8 +87,13 @@ systemctl enable --now docker
 systemctl enable --now cron
 
 CRON_LINE="30 1 * * * cd /home/${APP_USER}/beedb && bash scripts/backup.sh >> /home/${APP_USER}/beedb-backup.log 2>&1"
-( crontab -u "$APP_USER" -l 2>/dev/null | grep -v -F 'scripts/backup.sh' ; echo "$CRON_LINE" ) \
-    | crontab -u "$APP_USER" -
+{
+    # `|| true`: on a fresh account `crontab -l` and `grep` both exit non-zero;
+    # without it, `set -eo pipefail` aborts the subshell before the echo, and
+    # crontab reads empty stdin → installs an empty crontab.
+    crontab -u "$APP_USER" -l 2>/dev/null | grep -v -F 'scripts/backup.sh' || true
+    echo "$CRON_LINE"
+} | crontab -u "$APP_USER" -
 
 echo ""
 echo "Done. The docker group membership requires a new shell session to take effect."
