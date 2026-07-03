@@ -86,7 +86,7 @@ trap on_exit EXIT
 log "Discovering user databases"
 mapfile -t DATABASES < <(docker compose exec -T db \
     psql -U "$POSTGRES_USER" -d postgres -tAc \
-    "SELECT datname FROM pg_database WHERE datallowconn AND NOT datistemplate ORDER BY datname")
+    "SELECT datname FROM pg_database WHERE datallowconn AND NOT datistemplate AND datname <> 'postgres' ORDER BY datname")
 
 if (( ${#DATABASES[@]} == 0 )); then
     SUMMARY="no user databases found"
