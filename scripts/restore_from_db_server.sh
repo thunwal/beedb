@@ -46,10 +46,14 @@ echo "==> Migrating roles from old server..."
 # without the filter, `ALTER ROLE postgres ... PASSWORD '...'` would overwrite
 # the new server's postgres password (set via .env). The awk filter drops the
 # CREATE/ALTER ROLE lines for postgres and lets everything else through.
-# `[[:space:]]` after the name prevents matching roles like postgres_admin.
+# The name must be followed by `;` or whitespace: pg_dumpall emits a bare
+# `CREATE ROLE postgres;` (name immediately followed by `;`, no space) as well
+# as `ALTER ROLE postgres WITH ...;` (name followed by a space) - matching
+# only `[[:space:]]` let the CREATE line slip through. Requiring `;` or
+# whitespace after the name still avoids matching roles like postgres_admin.
 ssh -i "$SSH_KEY" "${OLD_SSH_USER}@${OLD_HOST}" \
     "sudo -u postgres pg_dumpall --globals-only" \
-  | awk '!/^(CREATE|ALTER) ROLE postgres[[:space:]]/' \
+  | awk '!/^(CREATE|ALTER) ROLE postgres([[:space:];]|$)/' \
   | docker compose exec -T db psql -U "$PG_USER" -d postgres --set ON_ERROR_STOP=0 -q
 echo "--> Roles done."
 
@@ -75,7 +79,7 @@ for DB in "${DATABASES[@]}"; do
         "sudo -u postgres pg_dump -Fc \"${DB}\"" \
       | docker compose exec -T db \
         pg_restore -U "$PG_USER" -d "$DB" \
-        --no-owner --no-privileges --exit-on-error
+        --exit-on-error
 
     echo "--> Done: $DB"
 done
