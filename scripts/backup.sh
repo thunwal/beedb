@@ -75,9 +75,13 @@ send_mail() {
 
 on_exit() {
     local ec=$?
-    if (( ec != 0 )) && [[ "$STATUS" == "OK" ]]; then
+    if (( ec != 0 )) && [[ "$STATUS" == OK* ]]; then
         STATUS="FAILED"
     fi
+    # The failure paths only set SUMMARY before exiting, so log the reason here
+    # as well — otherwise it exists solely in the mail subject and the log ends
+    # mid-step with no explanation.
+    [[ "$STATUS" != OK* ]] && log "FAILED: ${SUMMARY}"
     send_mail "beedb backup | ${STATUS} | ${SUMMARY}"
 }
 trap on_exit EXIT
@@ -94,7 +98,11 @@ if (( ${#DATABASES[@]} == 0 )); then
 fi
 log "Databases: ${DATABASES[*]}"
 
-# ── 2. dump each database ────────────────────────────────────────────────────
+# ── 2. dump each database, keeping exactly one local dump per database ───────
+# The older dump of a database is removed only once its replacement exists and
+# is non-empty, so ./backups/ never accumulates and never runs empty either.
+# This happens here rather than after the upload on purpose: an unreachable or
+# full Dropbox must not cause local dumps to pile up on the host.
 declare -A DUMP_KB
 declare -a DUMP_NAMES
 for DB in "${DATABASES[@]}"; do
@@ -110,6 +118,14 @@ for DB in "${DATABASES[@]}"; do
     DUMP_KB[$DB]=$(( (bytes + 1023) / 1024 ))
     DUMP_NAMES+=("$NAME")
     log "  ${DB}: ${DUMP_KB[$DB]} KB"
+
+    # Drop this database's previous dumps. The -name glob confines it to the
+    # database just dumped, the -regex to the generated timestamp pattern, so
+    # hand-placed files and other databases' dumps are never touched.
+    find "$BACKUP_DIR" -maxdepth 1 -type f \
+        -name "${DB}_*.dump" \
+        -regextype posix-extended -regex ".*_[0-9]{8}T[0-9]{6}\.dump$" \
+        ! -name "$NAME" -delete
 done
 
 # ── 3. Dropbox access token ──────────────────────────────────────────────────
@@ -124,42 +140,13 @@ if [[ -z "$TOKEN" ]]; then
     exit 1
 fi
 
-# ── 4. upload each dump ──────────────────────────────────────────────────────
-# Single-request upload; Dropbox limit is 150 MB per file. If any dump ever
-# grows past that, switch to /2/files/upload_session/*.
-TOTAL_UP_KB=0
-for NAME in "${DUMP_NAMES[@]}"; do
-    log "Uploading ${NAME} to ${DROPBOX_FOLDER}"
-    upload_resp=$(curl -s --max-time 3600 -X POST \
-        https://content.dropboxapi.com/2/files/upload \
-        --header "Authorization: Bearer ${TOKEN}" \
-        --header "Dropbox-API-Arg: {\"path\": \"${DROPBOX_FOLDER}/${NAME}\",\"mode\": \"overwrite\",\"mute\": true}" \
-        --header "Content-Type: application/octet-stream" \
-        --data-binary "@${BACKUP_DIR}/${NAME}" || true)
-    uploaded_size=$(jq -r '.size // empty' <<< "$upload_resp" 2>/dev/null || true)
-    if [[ -z "$uploaded_size" ]]; then
-        SUMMARY="Dropbox upload failed for ${NAME}: ${upload_resp:0:200}"
-        exit 1
-    fi
-    up_kb=$(( (uploaded_size + 1023) / 1024 ))
-    TOTAL_UP_KB=$(( TOTAL_UP_KB + up_kb ))
-    log "  Uploaded ${up_kb} KB"
-done
-
-# ── 5. keep only this run's local dumps ──────────────────────────────────────
-# Delete any *.dump matching the <name>_YYYYMMDDTHHMMSS.dump pattern that
-# wasn't produced by this run.
-keep_expr=""
-for NAME in "${DUMP_NAMES[@]}"; do
-    keep_expr+="|${NAME}"
-done
-keep_expr="${keep_expr#|}"
-find "$BACKUP_DIR" -maxdepth 1 -type f -regextype posix-extended \
-    -regex ".*/[A-Za-z_][A-Za-z0-9_-]*_[0-9]{8}T[0-9]{6}\.dump$" \
-    ! -regex ".*/(${keep_expr})$" -delete
-log "Local: kept ${#DUMP_NAMES[@]} current dump(s)"
-
-# ── 6. apply retention on Dropbox ────────────────────────────────────────────
+# ── 4. apply retention on Dropbox ────────────────────────────────────────────
+# Deliberately before the upload: expiring old backups is what frees space, so
+# a full Dropbox unblocks itself on the next run. With the upload first, a
+# failing upload skips retention, which keeps the destination full, which keeps
+# the upload failing — the account never recovers without manual work.
+# Safe in this order because retention never deletes anything younger than 15
+# days, so even a long run of failed uploads cannot remove a recent backup.
 RET_KEPT=0; RET_DEL=0; RET_SKIP=0
 
 apply_retention() {
@@ -247,13 +234,44 @@ apply_retention() {
     return 0
 }
 
+# A broken retention step must not stop the upload — getting today's dumps off
+# the host matters more than pruning old ones — but it must not be reported as
+# a clean run either, or the folder grows unnoticed for months.
+RETENTION_OK=true
 if apply_retention; then
     log "Retention: kept ${RET_KEPT}, deleted ${RET_DEL}, skipped ${RET_SKIP}"
 else
+    RETENTION_OK=false
     log "Retention step encountered errors"
 fi
 
-STATUS="OK"
+# ── 5. upload each dump ──────────────────────────────────────────────────────
+# Single-request upload; Dropbox limit is 150 MB per file. If any dump ever
+# grows past that, switch to /2/files/upload_session/*.
+TOTAL_UP_KB=0
+for NAME in "${DUMP_NAMES[@]}"; do
+    log "Uploading ${NAME} to ${DROPBOX_FOLDER}"
+    upload_resp=$(curl -s --max-time 3600 -X POST \
+        https://content.dropboxapi.com/2/files/upload \
+        --header "Authorization: Bearer ${TOKEN}" \
+        --header "Dropbox-API-Arg: {\"path\": \"${DROPBOX_FOLDER}/${NAME}\",\"mode\": \"overwrite\",\"mute\": true}" \
+        --header "Content-Type: application/octet-stream" \
+        --data-binary "@${BACKUP_DIR}/${NAME}" || true)
+    uploaded_size=$(jq -r '.size // empty' <<< "$upload_resp" 2>/dev/null || true)
+    if [[ -z "$uploaded_size" ]]; then
+        SUMMARY="Dropbox upload failed for ${NAME}: ${upload_resp:0:200}"
+        exit 1
+    fi
+    up_kb=$(( (uploaded_size + 1023) / 1024 ))
+    TOTAL_UP_KB=$(( TOTAL_UP_KB + up_kb ))
+    log "  Uploaded ${up_kb} KB"
+done
+
+if $RETENTION_OK; then
+    STATUS="OK"
+else
+    STATUS="OK (retention failed)"
+fi
 per_db=""
 for DB in "${DATABASES[@]}"; do
     per_db+="${DB}=${DUMP_KB[$DB]}KB "
