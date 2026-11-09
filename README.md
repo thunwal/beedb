@@ -15,7 +15,7 @@ Bringing up beedb on a freshly provisioned host requires three steps:
 3. **Populate the database** — restore from a Dropbox backup (see [Backup and restore databases](#backup-and-restore-databases)) or migrate from an old server (see [Migrating the databases to a new server](#migrating-the-databases-to-a-new-server)). Skip if starting with an empty database.
 
 The remaining chapters cover day-to-day operations: remote access, deploying
-code changes, and the backup/restore workflow.
+code changes, maintenance updates, and the backup/restore workflow.
 
 ---
 
@@ -208,6 +208,74 @@ Because all statements use `IF NOT EXISTS`, re-running the file is safe.
 
 ---
 
+## Maintenance updates
+
+`host-setup.sh` enables `unattended-upgrades`, which installs **security**
+updates daily and reboots at 03:00 when needed. Regular updates — kernel,
+systemd, Docker — and new PostgreSQL/PostGIS images are **not** installed
+automatically. Check for them every few months.
+
+Pick a time outside the backup window (01:30) — both steps briefly interrupt
+database connections.
+
+### 1. Update the host
+
+SSH into the host, then:
+
+```bash
+apt list --upgradable           # see what is pending
+sudo apt update && sudo apt full-upgrade
+sudo reboot                     # needed for kernel, systemd or Docker updates
+```
+
+The database container comes back up on its own after the reboot
+(`restart: unless-stopped`).
+
+### 2. Pull a new database image
+
+The image tag in `docker-compose.yml` (`postgis/postgis:18-3.6-alpine`) pins
+the major versions only. Pulling it again picks up the latest PostgreSQL 18.x
+and PostGIS 3.6.x minor releases:
+
+```bash
+cd beedb
+docker compose pull             # download the newest image for the tag
+docker compose up -d            # recreate the container with it; data volume is kept
+docker image prune              # remove the old, now unused image
+```
+
+Check that the container runs the new image:
+
+```bash
+docker image inspect postgis/postgis:18-3.6-alpine --format '{{.Id}} {{.Created}}'
+docker inspect beedb-db-1 --format '{{.Image}}'    # must match the Id above
+docker compose exec db psql -U postgres -tAc "select version()"
+```
+
+`{{.Created}}` is the image's build date.
+
+### 3. Update the PostGIS extension in each database
+
+A new image ships new PostGIS binaries, but each database keeps the extension
+version it was created with until it is updated explicitly. Connect to **each
+user database** (currently `beecovie` and `msculpturalis`) in your preferred
+IDE as `postgres` and run:
+
+```sql
+ALTER EXTENSION postgis UPDATE;
+```
+
+Then check:
+
+```sql
+select postgis_full_version();
+```
+
+The output should show the new version and no message saying that the
+extension needs an upgrade.
+
+---
+
 ## Backup and restore databases
 
 `scripts/backup.sh` auto-discovers every user database on the server, dumps
@@ -379,9 +447,7 @@ database on the new server and streams the dump over SSH into `pg_restore`.
 Every role is migrated with its password **except** the `postgres` role
 itself: the script filters the `CREATE/ALTER ROLE postgres ...` lines out of
 `pg_dumpall`'s output so the new server's `postgres` password (set via `.env`)
-is preserved. All other roles keep their old-server passwords, so applications
-that connect as e.g. `crohrbach_editor` or `geoserver_read_all` continue to
-work without any manual password reset.
+is preserved. All other roles keep their old-server passwords.
 
 If PostGIS extension errors appear after restore, run inside the container:
 

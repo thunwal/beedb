@@ -248,7 +248,6 @@ fi
 # ── 5. upload each dump ──────────────────────────────────────────────────────
 # Single-request upload; Dropbox limit is 150 MB per file. If any dump ever
 # grows past that, switch to /2/files/upload_session/*.
-TOTAL_UP_KB=0
 for NAME in "${DUMP_NAMES[@]}"; do
     log "Uploading ${NAME} to ${DROPBOX_FOLDER}"
     upload_resp=$(curl -s --max-time 3600 -X POST \
@@ -263,7 +262,6 @@ for NAME in "${DUMP_NAMES[@]}"; do
         exit 1
     fi
     up_kb=$(( (uploaded_size + 1023) / 1024 ))
-    TOTAL_UP_KB=$(( TOTAL_UP_KB + up_kb ))
     log "  Uploaded ${up_kb} KB"
 done
 
@@ -274,7 +272,8 @@ else
 fi
 per_db=""
 for DB in "${DATABASES[@]}"; do
-    per_db+="${DB}=${DUMP_KB[$DB]}KB "
+    mb=$(( (DUMP_KB[$DB] + 512) / 1024 ))   # rounded to the nearest MB
+    (( mb > 0 )) && per_db+="${DB}=${mb}MB " || per_db+="${DB}=<1MB "
 done
-SUMMARY="${#DATABASES[@]} DBs (${TOTAL_UP_KB} KB): ${per_db% }; retention kept ${RET_KEPT}, deleted ${RET_DEL}"
+SUMMARY="${#DATABASES[@]} DBs: ${per_db% }; ${RET_KEPT} backups kept, ${RET_DEL} deleted"
 log "Done: ${SUMMARY}"

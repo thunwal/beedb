@@ -2,3 +2,4 @@
 *.dump
 *.sql.gz
 backups/
+CLAUDE.local.md

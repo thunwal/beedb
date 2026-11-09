@@ -30,6 +30,7 @@ sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' "$SSHD_CONF"
 sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/'    "$SSHD_CONF"
 sed -i 's/^#\?UsePAM.*/UsePAM no/'                                 "$SSHD_CONF"
 sed -i 's/^#\?KbdInteractiveAuthentication.*/KbdInteractiveAuthentication no/' "$SSHD_CONF"
+sed -i 's/^#\?X11Forwarding.*/X11Forwarding no/'                   "$SSHD_CONF"
 systemctl reload ssh
 
 # ── Firewall ──────────────────────────────────────────────────────────────────
